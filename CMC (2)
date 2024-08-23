@@ -1,0 +1,81 @@
+import requests
+import pandas as pd
+
+# Clé API CoinMarketCap
+api_key = '5b7087cd-5244-42b0-8e96-1de634a054a7'
+
+# URL de l'API
+url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest'
+
+# En-têtes de la requête
+headers = {
+    'Accepts': 'application/json',
+    'X-CMC_PRO_API_KEY': api_key,
+}
+
+# Chemin du fichier Excel
+excel_path = r'C:\Users\Smichel\Desktop\MASTER\templates\Invest.xlsx'
+
+# Lire le fichier Excel
+df_invest = pd.read_excel(excel_path)
+
+# Afficher les noms des colonnes pour vérification
+print("Colonnes du DataFrame :")
+print(df_invest.columns)
+
+# Utiliser le nom correct de la colonne
+crypto_column = 'Name'  # Nom correct de la colonne
+
+# Liste pour stocker les résultats
+crypto_data = []
+
+# Convertir les valeurs en chaînes et gérer les valeurs manquantes
+df_invest[crypto_column] = df_invest[crypto_column].astype(str)
+
+# Parcourir les noms des cryptomonnaies
+for crypto_name in df_invest[crypto_column].dropna():
+    crypto_name = crypto_name.strip()  # Supprimer les espaces superflus
+    if not crypto_name:
+        continue  # Ignorer les noms vides
+
+    parameters = {
+        'symbol': crypto_name.upper(),  # Utilisation du symbole pour l'API
+        'convert': 'USD'
+    }
+
+    # Faire la requête à l'API
+    try:
+        response = requests.get(url, headers=headers, params=parameters)
+        response.raise_for_status()  # Vérifie si la requête a réussi
+        data = response.json()
+
+        if 'data' in data:
+            for key in data['data']:
+                crypto = data['data'][key]
+                # Extraire les informations désirées
+                crypto_info = {
+                    'name': crypto.get('name'),
+                    'symbol': crypto.get('symbol'),
+                    'market_cap': crypto['quote']['USD'].get('market_cap'),
+                    'price': crypto['quote']['USD'].get('price'),
+                    'volume_24h': crypto['quote']['USD'].get('volume_24h'),
+                    'percent_change_1h': crypto['quote']['USD'].get('percent_change_1h'),
+                    'percent_change_24h': crypto['quote']['USD'].get('percent_change_24h'),
+                    'percent_change_7d': crypto['quote']['USD'].get('percent_change_7d'),
+                }
+                crypto_data.append(crypto_info)
+        else:
+            print(f"Aucune donnée trouvée pour {crypto_name}")
+    except requests.exceptions.RequestException as e:
+        print(f"Erreur lors de la requête pour {crypto_name}: {e}")
+
+# Convertir la liste de résultats en DataFrame
+df_crypto = pd.DataFrame(crypto_data)
+
+# Chemin du fichier de sortie
+output_path = r'C:\Users\Smichel\Desktop\MASTER\templates\Invest_results.xlsx'
+
+# Sauvegarder les résultats dans un nouveau fichier Excel
+df_crypto.to_excel(output_path, index=False)
+
+print(f"Les informations sur les cryptomonnaies ont été sauvegardées dans {output_path}")

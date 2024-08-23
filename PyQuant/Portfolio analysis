@@ -1,0 +1,46 @@
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import matplotlib.pyplot as plt
+from scipy.stats import norm 
+
+# Télécharger les données historiques
+tickers = ['BTC-USD', 'ETH-USD', 'SPY', 'GLD']
+data = yf.download(tickers, start='2020-01-01', end='2023-01-01')['Adj Close']
+
+# Calcul des rendements journaliers
+returns = data.pct_change().dropna()
+
+# Calcul des rendements annuels moyens
+annual_returns = returns.mean() * 252
+
+# Calcul de la volatilité annuelle
+annual_volatility = returns.std() * np.sqrt(252)
+
+# Calcul du ratio de Sharpe (taux sans risque supposé à 0%)
+sharpe_ratio = annual_returns / annual_volatility
+
+# Calcul du ratio de Sortino
+downside_returns = returns[returns < 0].mean() * 252
+sortino_ratio = annual_returns / downside_returns
+
+# Calcul de la VaR à 5%
+VaR_95 = returns.quantile(0.05)
+
+# Beta et alpha par rapport à Bitcoin
+cov_matrix = returns.cov()
+beta = cov_matrix.loc['BTC-USD', tickers] / cov_matrix.loc['BTC-USD', 'BTC-USD']
+alpha = annual_returns - beta * annual_returns['BTC-USD']
+
+# Résultats
+resultats = pd.DataFrame({
+    'Annual Returns': annual_returns,
+    'Annual Volatility': annual_volatility,
+    'Sharpe Ratio': sharpe_ratio,
+    'Sortino Ratio': sortino_ratio,
+    'VaR 95%': VaR_95,
+    'Beta': beta,
+    'Alpha': alpha
+})
+
+print(resultats)

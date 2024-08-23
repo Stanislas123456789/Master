@@ -1,0 +1,105 @@
+import pandas as pd
+import numpy as np
+from scipy.optimize import minimize
+
+# Chemin du fichier Excel (utilisation d'une chaîne brute)
+file_path = r'C:\Users\Smichel\Desktop\Master\PyQuant\indice_analysis_results.xlsx'
+
+# Importer les données Excel
+data = pd.read_excel(file_path)
+
+# Afficher les premières lignes pour vérifier la structure et les noms des colonnes
+print("Premières lignes du DataFrame :")
+print(data.head())
+
+# Afficher les noms actuels des colonnes
+print("\nNoms des colonnes avant renommage :", data.columns)
+
+# Renommer les colonnes pour correspondre à vos attentes
+data.columns = ['Indice', 'Weight', 'Annual Returns', 'Annual Volatility', 'Sharpe Ratio', 'Sortino Ratio']
+
+# Afficher les noms des colonnes après renommage
+print("\nNoms des colonnes après renommage :", data.columns)
+
+# Vérifier les types de données
+print("\nTypes de données des colonnes :")
+print(data.dtypes)
+
+# Convertir les données des rendements annuels
+# Si la colonne 'Annual Returns' est déjà numérique, on la traite directement
+if data['Annual Returns'].dtype == 'object':
+    annual_returns = data['Annual Returns'].str.rstrip('%').astype('float') / 100  # Convertir en proportions
+else:
+    annual_returns = data['Annual Returns'].astype('float') / 100  # Convertir en proportions
+
+# Extraire les autres données
+indices = data['Indice'].values
+current_weights = data['Weight'].values / 100  # Convertir en proportions
+sharpe_ratios = data['Sharpe Ratio'].values
+sortino_ratios = data['Sortino Ratio'].values
+
+# Définir le taux sans risque (par exemple, 1%)
+risk_free_rate = 0.01
+
+# Définir les fonctions nécessaires
+def portfolio_performance(weights, returns, risk_free_rate):
+    portfolio_return = np.sum(returns * weights)
+    portfolio_std_dev = np.sqrt(np.dot(weights.T, np.dot(np.cov(returns), weights)))
+    sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_std_dev
+    return portfolio_std_dev, portfolio_return, sharpe_ratio
+
+def negative_sharpe_ratio(weights, returns, risk_free_rate):
+    _, _, sharpe_ratio = portfolio_performance(weights, returns, risk_free_rate)
+    return -sharpe_ratio
+
+def optimize_portfolio(returns, risk_free_rate=0.01):
+    num_assets = len(returns)
+    args = (returns, risk_free_rate)
+    
+    constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+    bounds = tuple((0, 1) for asset in range(num_assets))
+    
+    result = minimize(negative_sharpe_ratio, num_assets * [1. / num_assets,], args=args,
+                      method='SLSQP', bounds=bounds, constraints=constraints)
+    
+    return result
+
+# Exécuter l'optimisation
+optimal_result = optimize_portfolio(annual_returns)
+optimal_weights = optimal_result.x
+
+# Calculer la performance du portefeuille optimal
+std, returns, sharpe_ratio = portfolio_performance(optimal_weights, annual_returns, risk_free_rate)
+
+print("Poids optimaux pour un ratio de Sharpe maximal:")
+print(optimal_weights)
+
+print(f"Performance du portefeuille optimal: Rendement attendu: {returns*100:.2f}%, Volatilité: {std*100:.2f}%, Ratio de Sharpe: {sharpe_ratio:.2f}")
+
+# Créer un DataFrame avec les résultats
+results_df = pd.DataFrame({
+    'Indice': indices,
+    'Poids Actuels (%)': data['Weight'],
+    'Poids Optimaux (%)': np.round(optimal_weights * 100, 2),  # Convertir en pourcentages et arrondir
+    'Rendement Annuel': data['Annual Returns'],
+    'Volatilité Annuelle': data['Annual Volatility'],
+    'Ratio de Sharpe': data['Sharpe Ratio'],
+    'Ratio de Sortino': data['Sortino Ratio']
+})
+
+# Ajouter les performances du portefeuille optimal
+results_df.loc['Optimal Portfolio'] = [
+    'Optimal Portfolio',
+    None,
+    np.round(optimal_weights * 100, 2),  # Poids optimaux en pourcentages
+    np.round(returns * 100, 2),          # Rendement attendu en pourcentages
+    np.round(std * 100, 2),              # Volatilité en pourcentages
+    np.round(sharpe_ratio, 2),           # Ratio de Sharpe
+    None                                # Pas de Ratio de Sortino pour le portefeuille optimal
+]
+
+# Exporter les résultats vers un fichier Excel
+output_file_path = r'C:\Users\Smichel\Desktop\Master\PyQuant\2optimized_portfolio_results.xlsx'
+results_df.to_excel(output_file_path, index=False)
+
+print(f"\nLes résultats ont été exportés vers {output_file_path}")

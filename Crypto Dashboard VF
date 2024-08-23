@@ -1,0 +1,131 @@
+import pandas as pd
+import dash
+from dash import dcc, html, Input, Output
+from dash.dash_table import DataTable
+import webbrowser
+import threading
+
+# Création de l'application Dash
+app = dash.Dash(__name__)
+
+# Chemin du fichier Excel
+output_path = r'C:\Users\Smichel\Desktop\Python\templates\Invest.xlsx'
+
+# Lire le fichier Excel
+df_crypto = pd.read_excel(output_path)
+
+# Afficher les colonnes pour vérification
+print("Colonnes du DataFrame :")
+print(df_crypto.columns)
+
+# Préparer les options pour les filtres
+crypto_column = 'Name'  # Le nom de la colonne des cryptos
+investment_columns = [
+    'INVEST', 'Actual %', 'TP1', 'PRICE TP1', 'Ratio TP1', '% TP1', 'Mcap TP1', 'Nb TOKEN TP1', 'VALUE TP1',
+    'TP2', 'PRICE TP2', 'Ratio TP2', '% TP2', 'Mcap TP2', 'Nb TOKEN TP2', 'VALUE TP2',
+    'TP3', 'PRICE TP3', 'Ratio TP3', '% TP3', 'Mcap TP3', 'Nb TOKEN TP3', 'VALUE TP3',
+    'TP4', 'PRICE TP4', 'Ratio TP4', '% TP4', 'Cumulative %', 'Mcap TP4', 'Nb TOKEN TP4', 'VALUE TP4',
+    'TP5', 'PRICE TP5', 'Ratio TP5', '% TP5', 'Cumulative %', 'Mcap TP5', 'Nb TOKEN TP5', 'VALUE TP5',
+    'TP6', 'PRICE TP6', 'Ratio TP6', '% TP6', 'Mcap TP6', 'Nb TOKEN TP6', 'VALUE TP6'
+]
+options_columns = [{'label': col, 'value': col} for col in investment_columns]
+options_cryptos = [{'label': name, 'value': name} for name in df_crypto[crypto_column].dropna().unique()]
+
+# Définition de la disposition du tableau de bord
+app.layout = html.Div([
+    html.H1("Dashboard de Crypto Investissements", style={'textAlign': 'center', 'color': '#1f77b4'}),
+    
+    # Filtres de sélection
+    html.Div([
+        html.Div([
+            dcc.Dropdown(
+                id='dropdown-crypto',
+                options=options_cryptos,
+                placeholder="Sélectionnez des cryptos",
+                value=[options_cryptos[0]['value']] if options_cryptos else [],
+                multi=True  # Permet la sélection multiple
+            ),
+        ], style={'width': '48%', 'display': 'inline-block'}),
+        
+        html.Div([
+            dcc.Dropdown(
+                id='dropdown-column',
+                options=options_columns,
+                placeholder="Sélectionnez une colonne",
+                value='INVEST'  # Valeur par défaut
+            ),
+        ], style={'width': '48%', 'float': 'right', 'display': 'inline-block'}),
+    ]),
+    
+    # Tableau des résultats d'investissement
+    html.Div([
+        DataTable(
+            id='table-investments',
+            columns=[{'name': i, 'id': i} for i in df_crypto.columns],
+            data=df_crypto.to_dict('records'),
+            style_table={'overflowX': 'auto'},
+            style_header={
+                'backgroundColor': 'rgb(230, 230, 230)',
+                'fontWeight': 'bold'
+            },
+            style_cell={
+                'textAlign': 'left',
+                'padding': '8px',
+                'fontSize': '14px'
+            },
+            page_size=10  # Limiter le nombre de lignes affichées par page
+        ),
+    ]),
+    
+    # Graphique des valeurs
+    html.Div([
+        dcc.Graph(id='bar-graph'),
+    ])
+])
+
+# Callback pour mettre à jour le graphique en fonction des sélections
+@app.callback(
+    Output('bar-graph', 'figure'),
+    [Input('dropdown-crypto', 'value'), Input('dropdown-column', 'value')]
+)
+def update_graph(selected_cryptos, selected_column):
+    if not selected_cryptos or not selected_column:
+        return dash.no_update
+    
+    # Filtrer les données en fonction des cryptomonnaies sélectionnées
+    filtered_df = df_crypto[df_crypto[crypto_column].isin(selected_cryptos)]
+    if filtered_df.empty:
+        return dash.no_update
+    
+    # Préparer les données pour le graphique
+    data = []
+    for crypto in selected_cryptos:
+        crypto_data = filtered_df[filtered_df[crypto_column] == crypto]
+        if not crypto_data.empty:
+            data.append({
+                'x': [crypto],
+                'y': [crypto_data[selected_column].values[0]],
+                'type': 'bar',
+                'name': crypto
+            })
+    
+    fig = {
+        'data': data,
+        'layout': {
+            'title': f"Comparaison des {selected_column} pour les cryptomonnaies sélectionnées",
+            'xaxis': {'title': 'Cryptomonnaie'},
+            'yaxis': {'title': 'Valeur'}
+        }
+    }
+    
+    return fig
+
+# Fonction pour ouvrir automatiquement le navigateur
+def open_browser():
+    url = 'http://localhost:8095/'  # URL modifiée pour le serveur Dash
+    threading.Timer(1.25, lambda: webbrowser.open(url)).start()
+
+# Exécution de l'application Dash
+if __name__ == '__main__':
+    open_browser()  # Ouvrir le navigateur automatiquement
+    app.run_server(debug=True, host='0.0.0.0', port=8095)  # URL modifiée pour le serveur Dash

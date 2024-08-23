@@ -1,0 +1,166 @@
+import requests
+import pandas as pd
+import numpy as np
+
+# Clé API (remplacez par votre propre clé API)
+api_key = 'a1e549e92e338563d062549de70491bcc04d075be782d67d69023de0fcb3e40f'
+
+# Fonction pour récupérer les données historiques depuis CryptoCompare pour les 365 derniers jours
+def get_historical_data(crypto, currency='USD', limit=1000):
+    url = 'https://min-api.cryptocompare.com/data/v2/histoday'
+    params = {
+        'fsym': crypto,
+        'tsym': currency,
+        'limit': limit,
+        'api_key': api_key
+    }
+    response = requests.get(url, params=params)
+    
+    if response.status_code == 200:
+        data = response.json()
+        if 'Data' in data and 'Data' in data['Data']:
+            df = pd.DataFrame(data['Data']['Data'])
+            df['time'] = pd.to_datetime(df['time'], unit='s')
+            df.set_index('time', inplace=True)
+            return df
+        else:
+            print(f"Données historiques non disponibles pour {crypto}.")
+    else:
+        print(f"Erreur pour {crypto}: {response.status_code}")
+    return None
+
+# Fonction pour calculer les indicateurs financiers
+def calculate_indicators(df, benchmark_df):
+    if df is None or benchmark_df is None or df.empty or benchmark_df.empty:
+        print("Données manquantes pour le calcul des indicateurs.")
+        return {
+            'Annual Returns': np.nan,
+            'Annual Volatility': np.nan,
+            'Sharpe Ratio': np.nan,
+            'Sortino Ratio': np.nan,
+            'VaR 95%': np.nan,
+            'Beta': np.nan,
+            'Alpha': np.nan
+        }
+
+    # Nettoyage des données
+    df = df.dropna(subset=['close'])
+    benchmark_df = benchmark_df.dropna(subset=['close'])
+    
+    # Vérifier si les données sont encore disponibles après nettoyage
+    if df.empty or benchmark_df.empty:
+        print("Données insuffisantes après nettoyage.")
+        return {
+            'Annual Returns': np.nan,
+            'Annual Volatility': np.nan,
+            'Sharpe Ratio': np.nan,
+            'Sortino Ratio': np.nan,
+            'VaR 95%': np.nan,
+            'Beta': np.nan,
+            'Alpha': np.nan
+        }
+    
+    # Calcul des rendements quotidiens
+    returns = df['close'].pct_change().dropna()
+    benchmark_returns = benchmark_df['close'].pct_change().dropna()
+    
+    # Gestion des valeurs infinies ou NaN
+    if returns.empty or benchmark_returns.empty:
+        return {
+            'Annual Returns': np.nan,
+            'Annual Volatility': np.nan,
+            'Sharpe Ratio': np.nan,
+            'Sortino Ratio': np.nan,
+            'VaR 95%': np.nan,
+            'Beta': np.nan,
+            'Alpha': np.nan
+        }
+    
+    # Calcul des rendements annuels
+    annual_returns = returns.mean() * 365
+    
+    # Calcul de la volatilité annuelle
+    annual_volatility = returns.std() * np.sqrt(365)
+    
+    # Gestion des valeurs infinies ou division par zéro
+    sharpe_ratio = annual_returns / annual_volatility if annual_volatility != 0 else np.nan
+    
+    # Calcul du Sortino Ratio
+    negative_returns = returns[returns < 0]
+    sortino_ratio = annual_returns / (negative_returns.std() * np.sqrt(365)) if not negative_returns.empty else np.nan
+    
+    # Calcul de la VaR à 95%
+    var_95 = returns.quantile(0.05)
+    
+    # Calcul du Beta et Alpha
+    covariance = returns.cov(benchmark_returns)
+    benchmark_variance = benchmark_returns.var()
+    beta = covariance / benchmark_variance if benchmark_variance != 0 else np.nan
+    
+    risk_free_rate = 0.05
+    market_return = benchmark_returns.mean() * 365
+    alpha = annual_returns - (risk_free_rate + beta * (market_return - risk_free_rate)) if not np.isnan(beta) else np.nan
+    
+    return {
+        'Annual Returns': annual_returns,
+        'Annual Volatility': annual_volatility,
+        'Sharpe Ratio': sharpe_ratio,
+        'Sortino Ratio': sortino_ratio,
+        'VaR 95%': var_95,
+        'Beta': beta,
+        'Alpha': alpha
+    }
+
+# Liste des cryptomonnaies à analyser
+cryptos_to_analyze = [
+    'NEAR', 'RNDR', 'ETH', 'PENDLE', 'TAO', 'INJ', 'CKB', 'MPL', 'ICP', 'RIO', 
+    'GLQ', 'ONDO', 'THETA', 'OCTA', 'GRT', 'GFI', 'enqAI', 'AAVE', 'ALPH', 
+    'VET', 'UNI', 'FET', 'AVAX', 'AGRS', 'CAKE', 'FTM', 'IO', 'PROPC'
+]
+
+# Définir la cryptomonnaie de référence (benchmark)
+benchmark_crypto = 'BTC'
+
+# Récupération des données historiques pour la cryptomonnaie de référence
+benchmark_data = get_historical_data(benchmark_crypto)
+
+# Récupération des données historiques pour chaque cryptomonnaie à analyser
+crypto_data = {}
+for crypto in cryptos_to_analyze:
+    crypto_data[crypto] = get_historical_data(crypto)
+
+# Calcul des indicateurs financiers
+indicators_data = {}
+for crypto, data in crypto_data.items():
+    indicators_data[crypto] = calculate_indicators(data, benchmark_data)
+
+# Convertir les résultats en DataFrame
+indicators_df = pd.DataFrame(indicators_data).T
+
+# Création du DataFrame pour les données historiques
+historical_data = pd.concat(crypto_data, axis=1)
+
+# Chemin de sauvegarde des résultats
+output_path = r'C:\Users\Smichel\Desktop\Master\templates\Crypto_indicators_last_year1000.1.xlsx'
+
+# Sauvegarder les résultats dans un fichier Excel avec deux onglets
+with pd.ExcelWriter(output_path) as writer:
+    indicators_df.to_excel(writer, sheet_name='Indicators')
+    historical_data.to_excel(writer, sheet_name='Historical Data')
+
+print(f"Les indicateurs financiers et les données historiques ont été sauvegardés dans {output_path}")
+
+# Exemple de DataFrame
+df = pd.DataFrame(data)
+
+# Remplacer les valeurs infinies et NaN
+df.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+# Optionnel : Remplacer NaN par une valeur spécifique (par exemple, 0)
+df.fillna(0, inplace=True)
+
+print(df)
+
+# Vérifier les valeurs infinies et NaN dans le DataFrame
+print(df.isin([np.inf, -np.inf]).any())
+print(df.isna().any())

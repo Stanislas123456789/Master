@@ -1,0 +1,109 @@
+import yfinance as yf
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+
+# Définir la période des 20 dernières années
+end_date = datetime.today()
+start_date = end_date - timedelta(days=30*365)  # Environ 20 ans
+
+# Liste des indices à analyser
+indices = {
+    'NASDAQ-100': '^NDX',
+    'S&P 500': '^GSPC',
+    'Russell 2000': '^RUT',
+    'Stoxx 50': '^STOXX50E',
+    'MSCI World': 'URTH',       # Utilise l'ETF URTH pour MSCI World
+    'MSCI World AC': 'ACWI',    # Utilise l'ETF ACWI pour MSCI World AC
+    'MSCI EM': 'EEM'            # Utilise l'ETF EEM pour MSCI EM
+}
+
+# Taux sans risque (supposons 2%)
+risk_free_rate = 0.02
+# Nombre de jours de trading par an
+trading_days_per_year = 252
+
+# Préparer les listes pour stocker les résultats
+annual_returns = []
+annual_volatility = []
+sharpe_ratios = []
+sortino_ratios = []
+vars_95 = []
+betas = []
+alphas = []
+names = []
+
+# Télécharger les données de l'indice de référence pour le calcul de Beta et Alpha
+sp500 = yf.Ticker('^GSPC')
+sp500_hist = sp500.history(start=start_date, end=end_date)
+sp500_hist['Daily Return'] = sp500_hist['Close'].pct_change()
+market_daily_return = sp500_hist[['Daily Return']].dropna()
+
+for name, ticker in indices.items():
+    # Télécharger les données historiques
+    index = yf.Ticker(ticker)
+    index_hist = index.history(start=start_date, end=end_date)
+    
+    # Calculer les rendements journaliers
+    index_hist['Daily Return'] = index_hist['Close'].pct_change().dropna()
+    
+    # Assurer que les dates des indices et du S&P 500 sont alignées
+    combined_data = pd.merge(index_hist[['Daily Return']], market_daily_return, left_index=True, right_index=True, how='inner', suffixes=('_index', '_market'))
+    
+    # Vérification si la série est vide
+    if combined_data.empty:
+        print(f"Aucune donnée valide pour {name}.")
+        continue
+
+    # Calculer les rendements annuels
+    mean_daily_return = np.mean(combined_data['Daily Return_index'])
+    mean_annual_return = mean_daily_return * trading_days_per_year
+    annual_returns.append(mean_annual_return)
+    
+    # Calculer l'écart type annuel
+    std_dev_annual = np.std(combined_data['Daily Return_index']) * np.sqrt(trading_days_per_year)
+    annual_volatility.append(std_dev_annual)
+    
+    # Calculer le ratio de Sharpe
+    sharpe_ratio = (mean_annual_return - risk_free_rate) / std_dev_annual
+    sharpe_ratios.append(sharpe_ratio)
+    
+    # Calculer le ratio de Sortino
+    negative_volatility = np.std(combined_data[combined_data['Daily Return_index'] < 0]['Daily Return_index']) * np.sqrt(trading_days_per_year)
+    sortino_ratio = (mean_annual_return - risk_free_rate) / negative_volatility
+    sortino_ratios.append(sortino_ratio)
+    
+    # Calculer la VaR à 95%
+    VaR_95 = np.percentile(combined_data['Daily Return_index'], 5)
+    vars_95.append(VaR_95)
+    
+    # Calculer Beta et Alpha par rapport au S&P 500
+    covariance = np.cov(combined_data['Daily Return_index'], combined_data['Daily Return_market'])[0][1]
+    beta = covariance / np.var(combined_data['Daily Return_market'])
+    alpha = mean_annual_return - beta * np.mean(market_daily_return['Daily Return']) * trading_days_per_year
+    betas.append(beta)
+    alphas.append(alpha)
+    
+    # Ajout du nom de l'indice
+    names.append(name)
+
+# Vérifiez la longueur des listes
+length = len(names)
+assert length == len(annual_returns) == len(annual_volatility) == len(sharpe_ratios) == len(sortino_ratios) == len(vars_95) == len(betas) == len(alphas), "Les longueurs des listes ne correspondent pas."
+
+# Créer un DataFrame pour les résultats
+resultats = pd.DataFrame({
+    'Indice': names,
+    'Annual Returns': annual_returns,
+    'Annual Volatility': annual_volatility,
+    'Sharpe Ratio': sharpe_ratios,
+    'Sortino Ratio': sortino_ratios,
+    'VaR 95%': vars_95,
+    'Beta': betas,
+    'Alpha': alphas
+})
+
+# Sauvegarder les résultats dans un fichier Excel
+resultats.to_excel('indice_analysis_results3.xlsx', index=False)
+
+print("Les résultats ont été exportés vers 'indice_analysis_results.xlsx'.")

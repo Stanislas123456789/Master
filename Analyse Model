@@ -1,0 +1,14 @@
+import joblib
+
+# Define the path to your serialized model
+model_path = r'H:\STATISTIQUE\Logiciels\Python\pricing\modelisation\Data\trained_models\model_4552'
+
+try:
+    # Load the model
+    model = joblib.load(model_path)
+
+    # Now you can use `model` for analysis
+    # Add your analysis code here
+
+except Exception as e:
+    print(f"Error loading the model: {e}")

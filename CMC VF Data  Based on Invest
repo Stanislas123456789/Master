@@ -1,0 +1,144 @@
+import requests
+import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.styles import PatternFill, Font
+
+# Clé API CoinMarketCap
+api_key = '5b7087cd-5244-42b0-8e96-1de634a054a7'
+
+# URL de l'API
+url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest'
+
+# En-têtes de la requête
+headers = {
+    'Accepts': 'application/json',
+    'X-CMC_PRO_API_KEY': api_key,
+}
+
+# Chemin du fichier Excel
+excel_path = r'C:\Users\Smichel\Desktop\Master\templates\Invest.xlsx'
+
+# Lire le fichier Excel
+df_invest = pd.read_excel(excel_path)
+
+# Afficher les noms des colonnes pour vérification
+print("Colonnes du DataFrame :")
+print(df_invest.columns)
+
+# Utiliser le nom correct de la colonne
+crypto_column = 'Name'  # Nom correct de la colonne
+
+# Liste pour stocker les résultats
+crypto_data = []
+
+# Convertir les valeurs en chaînes et gérer les valeurs manquantes
+df_invest[crypto_column] = df_invest[crypto_column].astype(str)
+
+# Parcourir les noms des cryptomonnaies et prendre uniquement les 27 premières
+for crypto_name in df_invest[crypto_column].dropna().head(27):
+    crypto_name = crypto_name.strip()  # Supprimer les espaces superflus
+    if not crypto_name:
+        continue  # Ignorer les noms vides
+
+    parameters = {
+        'symbol': crypto_name.upper(),  # Utilisation du symbole pour l'API
+        'convert': 'USD'
+    }
+
+    # Faire la requête à l'API
+    try:
+        response = requests.get(url, headers=headers, params=parameters)
+        response.raise_for_status()  # Vérifie si la requête a réussi
+        data = response.json()
+
+        if 'data' in data:
+            for key in data['data']:
+                crypto = data['data'][key]
+                # Vérifier si 'market_cap' est présent et est numérique
+                if crypto['quote']['USD'].get('market_cap') is not None and isinstance(crypto['quote']['USD']['market_cap'], (int, float)):
+                    # Extraire les informations désirées
+                    crypto_info = {
+                        'name': crypto.get('name'),
+                        'symbol': crypto.get('symbol'),
+                        'market_cap': crypto['quote']['USD']['market_cap'] / 1e9,  # Convertir en milliards
+                        'price': crypto['quote']['USD'].get('price'),
+                        'percent_change_7d': crypto['quote']['USD'].get('percent_change_7d'),
+                        'percent_change_30d': crypto['quote']['USD'].get('percent_change_30d'),
+                    }
+                    # Ajouter les informations d'achat et de cible de prix
+                    invest_info = df_invest[df_invest[crypto_column].str.strip().str.upper() == crypto_name.upper()]
+                    if not invest_info.empty:
+                        crypto_info['prix_achat'] = invest_info['PRIX D\'achat'].values[0]
+                        crypto_info['price_target'] = invest_info['PRICE TARGET'].values[0]
+                    crypto_data.append(crypto_info)
+                else:
+                    print(f"Market cap non disponible pour {crypto_name}")
+        else:
+            print(f"Aucune donnée trouvée pour {crypto_name}")
+    except requests.exceptions.RequestException as e:
+        print(f"Erreur lors de la requête pour {crypto_name}: {e}")
+
+# Convertir la liste de résultats en DataFrame
+df_crypto = pd.DataFrame(crypto_data)
+
+# Arrondir les valeurs numériques à 2 décimales pour une meilleure lisibilité
+df_crypto = df_crypto.round({
+    'market_cap': 2,
+    'price': 2,
+    'percent_change_1h': 2,
+    'percent_change_7d': 2,
+})
+
+# Sélectionner uniquement les 27 premières lignes
+df_crypto = df_crypto.head(27)
+
+# Afficher le tableau de manière formatée
+print(df_crypto.to_string(index=False))
+
+# Chemin du fichier de sortie
+output_path = r'C:\Users\Smichel\Desktop\Master\templates\Invest_results8.xlsx'
+
+# Sauvegarder les résultats dans un nouveau fichier Excel
+df_crypto.to_excel(output_path, index=False)
+
+# Charger le fichier Excel et ajuster la mise en forme
+wb = load_workbook(output_path)
+ws = wb.active
+
+# Ajuster la taille des colonnes
+for column in ws.columns:
+    max_length = 0
+    column = list(column)
+    for cell in column:
+        try:
+            if len(str(cell.value)) > max_length:
+                max_length = len(cell.value)
+        except:
+            pass
+    adjusted_width = (max_length + 2)
+    ws.column_dimensions[column[0].column_letter].width = adjusted_width
+
+# Définir les couleurs pour les en-têtes
+header_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+header_font = Font(bold=True)
+
+for cell in ws[1]:
+    cell.fill = header_fill
+    cell.font = header_font
+
+# Appliquer des couleurs alternées aux lignes
+row_fill_odd = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+row_fill_even = PatternFill(start_color="E0E0E0", end_color="E0E0E0", fill_type="solid")
+
+for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+    for cell in row:
+        if cell.row % 2 == 0:
+            cell.fill = row_fill_even
+        else:
+            cell.fill = row_fill_odd
+
+# Sauvegarder les modifications
+wb.save(output_path)
+
+print(f"Les informations sur les cryptomonnaies ont été sauvegardées dans {output_path}")

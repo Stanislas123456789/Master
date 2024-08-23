@@ -1,0 +1,144 @@
+import pandas as pd
+import dash
+from dash import dcc, html, Input, Output
+import webbrowser
+import threading
+
+# Création de l'application Dash
+app = dash.Dash(__name__)
+
+# Fonction de nettoyage des données
+def nettoyer_donnees(df):
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            df[col] = df[col].str.replace(',', '.', regex=False).str.strip()  # Remplacer les virgules et supprimer les espaces
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            try:
+                df[col] = pd.to_numeric(df[col], errors='coerce')  # Utiliser 'coerce' pour convertir les erreurs en NaN
+            except ValueError:
+                print(f"Erreur de conversion pour la colonne {col}")
+                pass
+    return df
+
+# Chargement et préparation des données
+def charger_donnees():
+    try:
+        df = pd.read_excel(r'C:\Users\Smichel\Desktop\MASTER\templates\Invest.xlsx', sheet_name='Invest')
+        df = nettoyer_donnees(df)
+        return df
+    except FileNotFoundError:
+        print("Erreur : Le fichier 'Invest.xlsx' est introuvable.")
+        return pd.DataFrame()
+    except Exception as e:
+        print(f"Erreur lors de la lecture du fichier : {e}")
+        return pd.DataFrame()
+
+# Fonction pour ouvrir automatiquement le navigateur
+def open_browser():
+    url = 'http://localhost:8081/'  # URL modifiée pour le serveur Dash
+    threading.Timer(1.25, lambda: webbrowser.open(url)).start()
+
+# Initialisation des données
+df = charger_donnees()
+
+# Sélectionner les lignes de A2 à A29
+df = df.iloc[1:5].reset_index(drop=True)
+
+# Vérifier les valeurs uniques de la colonne 'Name' avant nettoyage
+print("Valeurs uniques dans 'Name' avant nettoyage:", df['Name'].unique())
+
+# Assurer que la colonne 'Name' est bien du type string
+df['Name'] = df['Name'].astype(str)
+
+# Supprimer les lignes où 'Name' est NaN ou vide
+df = df[df['Name'].notna() & (df['Name'].str.strip() != '')]
+
+# Vérifier les valeurs uniques de la colonne 'Name' après nettoyage
+print("Valeurs uniques dans 'Name' après nettoyage:", df['Name'].unique())
+
+# Groupes de colonnes par catégorie
+groupes_colonnes = {
+    'PRICE TP': ['PRICE TP1', 'PRICE TP2', 'PRICE TP3', 'PRICE TP4', 'PRICE TP5', 'PRICE TP6'],
+    'Ratio TP': ['Ratio TP1', 'Ratio TP2', 'Ratio TP3', 'Ratio TP4', 'Ratio TP5', 'Ratio TP6'],
+    '% TP': ['% TP1', '% TP2', '% TP3', '% TP4', '% TP5', '% TP6'],
+    'Mcap TP': ['Mcap TP1', 'Mcap TP2', 'Mcap TP3', 'Mcap TP4', 'Mcap TP5', 'Mcap TP6'],
+    'Nb TOKEN TP': ['Nb TOKEN TP1', 'Nb TOKEN TP2', 'Nb TOKEN TP3', 'Nb TOKEN TP4', 'Nb TOKEN TP5', 'Nb TOKEN TP6'],
+    'VALUE TP': ['VALUE TP1', 'VALUE TP2', 'VALUE TP3', 'VALUE TP4', 'VALUE TP5', 'VALUE TP6']
+}
+
+# Sélectionner les colonnes existantes
+colonnes_existantes = {k: [col for col in v if col in df.columns] for k, v in groupes_colonnes.items()}
+
+if not df.empty:
+    df = df[['Name'] + [col for cols in colonnes_existantes.values() for col in cols]]
+    df['Name'] = df['Name'].astype(str)
+
+noms_cryptos = sorted(df['Name'].unique())
+
+# Définition de la disposition du tableau de bord
+app.layout = html.Div([
+    html.H1("Dashboard de Crypto Investissements", style={'textAlign': 'center', 'color': '#1f77b4'}),
+    html.Div([
+        dcc.Dropdown(
+            id='dropdown-noms',
+            options=[{'label': nom, 'value': nom} for nom in noms_cryptos],
+            placeholder="Sélectionnez une crypto",
+            searchable=True
+        ),
+        dcc.Dropdown(
+            id='dropdown-categories',
+            options=[{'label': key, 'value': key} for key in colonnes_existantes.keys()],
+            placeholder="Sélectionnez une catégorie",
+            value='PRICE TP'  # Valeur par défaut
+        ),
+        dcc.Graph(id='graph')
+    ])
+])
+
+# Callback pour mettre à jour le graphique en fonction des sélections
+@app.callback(
+    Output('graph', 'figure'),
+    [Input('dropdown-noms', 'value'), Input('dropdown-categories', 'value')]
+)
+def afficher_graphique(nom_crypto, categorie_selectionnee):
+    if not nom_crypto or not categorie_selectionnee:
+        return dash.no_update
+
+    crypto = df[df['Name'] == nom_crypto]
+    if crypto.empty:
+        return dash.no_update
+
+    colonnes_selectionnees = colonnes_existantes.get(categorie_selectionnee, [])
+    
+    if not colonnes_selectionnees:
+        return dash.no_update
+    
+    data = []
+    
+    # Préparer les données pour le graphique
+    for col in colonnes_selectionnees:
+        if col in crypto.columns:
+            data.append({
+                'x': [col],
+                'y': [crypto[col].values[0]],
+                'type': 'bar',
+                'name': f'{nom_crypto} - {col}'
+            })
+    
+    fig = {
+        'data': data,
+        'layout': {
+            'title': f"Valeurs pour {nom_crypto} - {categorie_selectionnee}",
+            'xaxis': {'title': 'Colonnes'},
+            'yaxis': {'title': 'Valeur'},
+            'barmode': 'group'  # Afficher les barres côte à côte pour comparer
+        }
+    }
+    
+    return fig
+
+# Exécution de l'application Dash
+if __name__ == '__main__':
+    open_browser()  # Ouvrir le navigateur automatiquement
+    app.run_server(debug=True, host='0.0.0.0', port=8081)  # URL modifiée pour le serveur Dash
